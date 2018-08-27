@@ -46,7 +46,7 @@ def downloader():
         except requests.Timeout as err:
             html.status_code = 408
         except:
-        	html.status_code = 999
+            html.status_code = 999
         if html.status_code is not 200:
             sys.stdout.write("[!] Download error\n")
             sys.stdout.write("[!] HTTP: " + str(html.status_code) + "\n")
@@ -78,17 +78,22 @@ def downloader():
 def scraper():
     global app_running
     # we should wait a bit between fetches so pastebin doesn't block us
-    delay = 25
+    delay = 35
+    html = None
     while app_running:
-    	if args.verbose:
-    		print ("[*] Fetching...")
+        if args.verbose:
+            print ("[*] Fetching...")
         try:
             #html = requests.get("http://www.pastebin.com", timeout=1)
             html = requests.get("https://scrape.pastebin.com/api_scraping.php", timeout=2)
-    	except requests.Timeout as err:
+        except requests.Timeout as err:
+            if not html:
+                html = requests.Response
+            if args.verbose:
+                print ("[*] Bad response. Forcing 408...")
             html.status_code = 408
         except:
-        	html.status_code = 999
+            html.status_code = 999
         if html.status_code is not 200:
             sys.stdout.write("[!] Fetch error\n")
             sys.stdout.write("[!] HTTP: " + str(html.status_code) + "\n")
