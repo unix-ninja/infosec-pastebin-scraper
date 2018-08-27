@@ -1,22 +1,23 @@
 #!/usr/bin/python
-# pastebin scraper v2
+# pastebin scraper v3
 # written by unix-ninja
 
 import argparse
 import BeautifulSoup
-import requests
-import time
-import Queue
-import threading
-import sys
 import datetime
-import random
+import json
 import os
+import Queue
+import random
+import requests
+import sys
+import threading
+import time
 
 ############################################################
 # Configs
 
-max_seen = 50
+max_seen = 500
 num_workers = 1
 pastesseen = set()
 pastes = Queue.Queue()
@@ -34,13 +35,14 @@ def downloader():
             if not args.debug:
                 os.makedirs("pastes/"+today)
         paste = pastes.get()
-        fn = "pastes/%s/%s.txt" % (today, paste)
+        fn = "pastes/%s/%s.txt" % (today, paste['key'])
         if os.path.exists(fn):
             if args.verbose:
-                sys.stdout.write("[*] Skipping %s, already archived\n" % paste)
+                sys.stdout.write("[*] Skipping %s, already archived\n" % paste['key'])
             continue
         try:
-            html = requests.get("http://pastebin.com/raw.php?i=" + paste, timeout=1)
+            #html = requests.get("http://pastebin.com/raw.php?i=" + paste, timeout=1)
+            html = requests.get("https://scrape.pastebin.com/api_scrape_item.php?i=" + paste['key'], timeout=1)
         except requests.Timeout as err:
             html.status_code = 408
         except:
@@ -51,13 +53,13 @@ def downloader():
             # don't download permenant errors
             if html.status_code not in [404,999]:
                 # replace the paste if we haven't downloaded it
-                print "[*] Requeuing %s..." % paste
+                print "[*] Requeuing %s..." % paste['key']
                 pastes.put(paste)
                 # make sure the error delay is reasonable
                 time.sleep(delay * 12)
             continue
         if "requesting a little bit too much" in html.text:
-            print "[*] Requeuing %s..." % paste
+            print "[*] Requeuing %s..." % paste['key']
             pastes.put(paste)
             print "[*] Throttling..."
             time.sleep(0.1)
@@ -66,7 +68,7 @@ def downloader():
                 f = open(fn, "wt")
                 f.write(html.text.encode(html.encoding))
                 f.close()
-        sys.stdout.write("Downloaded %s" % paste)
+        sys.stdout.write("Downloaded %s" % paste['key'])
         if args.verbose:
             sys.stdout.write(", waiting %f sec" % delay)
         sys.stdout.write("\n")
@@ -76,12 +78,13 @@ def downloader():
 def scraper():
     global app_running
     # we should wait a bit between fetches so pastebin doesn't block us
-    delay = 15
+    delay = 25
     while app_running:
     	if args.verbose:
     		print ("[*] Fetching...")
         try:
-            html = requests.get("http://www.pastebin.com", timeout=1)
+            #html = requests.get("http://www.pastebin.com", timeout=1)
+            html = requests.get("https://scrape.pastebin.com/api_scraping.php", timeout=2)
     	except requests.Timeout as err:
             html.status_code = 408
         except:
@@ -91,29 +94,27 @@ def scraper():
             sys.stdout.write("[!] HTTP: " + str(html.status_code) + "\n")
             time.sleep(delay)
             continue
-        soup = BeautifulSoup.BeautifulSoup(html.text)
-        ul = soup.find("ul", "right_menu")
-        if ul:
-            for li in ul.findAll("li"):
-                paste = li.a["href"]
-                paste = paste[1:] # chop off leading /
-
-                if paste in pastesseen:
-                    if args.verbose:
-                        sys.stdout.write("%s already seen\n" % paste)
-                else:
-                    pastes.put(paste)
-                    pastesseen.add(paste)
-                    if max_seen > 0 and len(pastesseen) > max_seen:
-                        pastesseen.pop()
-                    if args.verbose:
-                        sys.stdout.write("%s queued for download\n" % paste)
+        if html:
+            try:
+                for paste in html.json():
+                    if paste['key'] in pastesseen:
+                        if args.verbose:
+                            sys.stdout.write("%s already seen\n" % paste['key'])
+                    else:
+                        pastes.put(paste)
+                        pastesseen.add(paste['key'])
+                        if max_seen > 0 and len(pastesseen) > max_seen:
+                            pastesseen.pop()
+                        if args.verbose:
+                            sys.stdout.write("%s queued for download\n" % paste['key'])
+            except:
+                sys.stdout.write("[!] Unable to fetch %s\n" % paste['key'])
         time.sleep(delay)
 
 ############################################################
 # Parse options
 
-parser = argparse.ArgumentParser(description='Scrape pastes from pastebin.com using HTML DOM')
+parser = argparse.ArgumentParser(description='Scrape pastes from pastebin.com using the pastebin API')
 parser.add_argument('-d', dest='debug', action='store_true', help='enable debug mode')
 parser.add_argument('-v', dest='verbose', action='store_true', help='enable verbose output')
 args = parser.parse_args()
